@@ -1,14 +1,4 @@
-"""
-dataset.py — Dataset loading matching PDF specification.
 
-PDF Section 7: Data Preprocessing
-- Face extraction → 224×224
-- Normalization: ImageNet mean/std
-- Augmentation: random flip, rotation (±10°), cropping, color jitter
-
-PDF Section 10: Temporal
-- Sequences of T=8 frames from directory
-"""
 
 import io
 import os
