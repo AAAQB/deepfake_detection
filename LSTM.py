@@ -70,15 +70,14 @@ class CNNLSTM(nn.Module):
 
         lstm_out, _ = self.lstm(features)             # (B, T, lstm_out_dim)
 
-        # Mean pooling over the temporal dimension — more robust
-        # than using only the last output for deepfake detection
+       
         pooled = lstm_out.mean(dim=1)                 # (B, lstm_out_dim)
 
         out = self.classifier(pooled)                 # (B, num_classes)
         return out
 
     def extract_sequence_embeddings(self, x):
-        """Extract per-frame feature embeddings before LSTM."""
+        
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
         features = self.feature_extractor(x)
