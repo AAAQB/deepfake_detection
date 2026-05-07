@@ -1,6 +1,4 @@
 """
-facedetector.py — Shared MediaPipe face detector (MediaPipe 0.10.x compatible).
-
 All detection pipeline files import from here for consistent behavior:
 - preprocessing.py (face extraction for training)
 - inference.py (real-time camera)
