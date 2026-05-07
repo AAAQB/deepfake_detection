@@ -1,10 +1,4 @@
 """
-download_dataset.py — Dataset preparation for deepfake detection.
-
-PDF Section 5: Dataset Collection
-- FaceForensics++, Celeb-DF, DFDC — referenced sources
-- Synthetic Filter Dataset — self-generated
-
 This script does NOT generate synthetic data. It provides:
   1. Status check: scan dataset_raw/ and dataset_faces/ for existing data
   2. Placeholder instructions for downloading standard datasets
