@@ -1,10 +1,4 @@
-"""
-LSTM.py — CNN + Bidirectional LSTM for temporal deepfake detection.
 
-PDF Section 10: Temporal Analysis
-Processes sequences of face crops for temporal deepfake detection.
-Uses mean pooling over time for better temporal consistency.
-"""
 
 import torch
 import torch.nn as nn
