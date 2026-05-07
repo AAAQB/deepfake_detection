@@ -1,11 +1,4 @@
-"""
-preprocessing.py — Face extraction from video frames.
 
-PDF Section 6: Face Extraction
-Uses MediaPipe face detection to extract and normalize face crops.
-Matches the face detector used in inference (inference.py)
-for consistent train/inference pipeline.
-"""
 
 import os
 import glob
