@@ -1,5 +1,5 @@
 """
-This script does NOT generate synthetic data. It provides:
+It provides:
   1. Status check: scan dataset_raw/ and dataset_faces/ for existing data
   2. Placeholder instructions for downloading standard datasets
   3. A dry-run preprocessing validator
