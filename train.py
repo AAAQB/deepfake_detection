@@ -1,20 +1,4 @@
-"""
-train.py — Training pipeline matching PDF specification.
 
-PDF Section 9: Training Procedure
-- Loss: Cross-Entropy
-- Optimizer: AdamW
-- LR: 0.001 (cosine decay)
-- Batch: 32
-- Epochs: 30
-- Data Augmentation: random flip, rotation, crop, color jitter
-- Early stopping (patience 10)
-- Model selection: best validation accuracy
-
-PDF Section 10: Temporal (CNN+LSTM)
-- seq_len=8
-- 2-layer bidirectional LSTM (hidden=512)
-"""
 
 import argparse
 import os
