@@ -1,7 +1,4 @@
 """
-evaluate.py — Model evaluation matching PDF specification.
-
-PDF Section 13: Evaluation Metrics
 - Confusion Matrix
 - Precision, Recall, F1-Score (per class and weighted)
 - ROC Curve (One-vs-Rest)
