@@ -1,9 +1,4 @@
-"""
-EfficientNet.py — EfficientNet-B4 classifier.
 
-PDF Section 8: Model Architecture
-Single-frame CNN-based classifier for 3-class deepfake detection.
-"""
 
 import torch
 import torch.nn as nn
