@@ -1,11 +1,3 @@
-"""
-inference.py — Real-time face filter & deepfake detection.
-
-PDF Section 11: Real-Time Detection
-- MediaPipe face detection (via shared facedetector module)
-- Overlay: bounding box + class label + confidence
-- FPS display
-"""
 
 import argparse
 import os
