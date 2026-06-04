@@ -9,8 +9,8 @@ class TemporalModel(nn.Module):
         self,
         num_classes=3,
         hidden_size=512,
-        num_layers=4,
-        dropout=0.4,
+        num_layers=5,
+        dropout=0.5,
         bidirectional=True,
         freeze_backbone=False
     ):
@@ -59,7 +59,7 @@ class TemporalModel(nn.Module):
         features = features.view(B, T, -1)         # (B, T, cnn_out_dim)
 
         lstm_out, _ = self.lstm(features)          # (B, T, lstm_out_dim)
-        last_out = lstm_out[:, -1, :]              # (B, lstm_out_dim)
+        last_out = lstm_out.mean(dim=1)            # (B, lstm_out_dim)
 
         out = self.classifier(last_out)            # (B, num_classes)
         return out
