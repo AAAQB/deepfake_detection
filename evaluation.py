@@ -19,11 +19,18 @@ def evaluate_model(mode_type="frame"):
     device = torch.device(CFG.device)
     print(f"\n>>> Initialising Benchmark Suite for [{mode_type.upper()}] mode on {device}...")
 
-    # 1. Dispatch correct data loader to preserve test integrity
-    is_temporal = (mode_type == "temporal")
-    # For ensemble testing, we fetch the frame dataset to test single-frame extraction capability
-    loader_temporal_flag = True if mode_type == "temporal" else False
-    _, _, test_loader = create_loaders(temporal=loader_temporal_flag)
+    from torchvision import transforms
+    from torch.utils.data import DataLoader
+    from torchvision.datasets import ImageFolder
+
+    eval_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    test_dataset = ImageFolder(root="dataset_faces", transform=eval_transform)
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=0)
 
     # 2. Reconstruct configurations and load model weights safely
     frame_model, temporal_model = None, None
@@ -34,8 +41,8 @@ def evaluate_model(mode_type="frame"):
         if not os.path.exists(ckpt_p):
             print(f"Abort: Missing frame model weights at {ckpt_p}");
             return
-        frame_model.load_state_dict(torch.load(ckpt_p, map_location=device))
-        frame_model.eval()
+        frame_ckpt = torch.load(ckpt_p, map_location=device, weights_only=False)
+        frame_model.load_state_dict(frame_ckpt["model_state_dict"])
 
     if mode_type in ["temporal", "ensemble"]:
         temporal_model = build_model(temporal=True).to(device)
@@ -43,8 +50,8 @@ def evaluate_model(mode_type="frame"):
         if not os.path.exists(ckpt_p):
             print(f"Abort: Missing temporal model weights at {ckpt_p}");
             return
-        temporal_model.load_state_dict(torch.load(ckpt_p, map_location=device))
-        temporal_model.eval()
+        temporal_ckpt = torch.load(ckpt_p, map_location=device, weights_only=False)
+        temporal_model.load_state_dict(temporal_ckpt["model_state_dict"])
 
     all_labels = []
     all_preds = []
@@ -135,7 +142,7 @@ def generate_charts(y_true, y_pred, y_prob, mode_type):
 
 
 if __name__ == "__main__":
-    # Sequentially benchmark all deployed runtime variations
     evaluate_model(mode_type="frame")
+
     evaluate_model(mode_type="temporal")
     evaluate_model(mode_type="ensemble")
