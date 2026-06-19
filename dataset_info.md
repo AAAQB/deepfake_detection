@@ -4,7 +4,7 @@ The full dataset is stored in Google Drive because it is larger than 10GB and ca
 
 ## Dataset Download Link
 
-Google Drive: https://drive.google.com/file/d/1j2nu5lKmzbsAV2k_7sRgrpk5uc9KkcuU/view?usp=sharing
+Google Drive: https://drive.google.com/file/d/1GmXdm0CQomDjmSoH_sNZZMTztyjwNwYR/view?usp=sharing
 
 ## Dataset Structure
 
