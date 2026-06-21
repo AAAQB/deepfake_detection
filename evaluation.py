@@ -3,131 +3,98 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 from sklearn.preprocessing import label_binarize
 from torch.utils.data import Dataset, DataLoader
 
-# Import global configuration from pipeline
-from deepfake_pipeline import C
+# Import baseline pipeline configurations and data scanner modules
+from deepfake_pipeline import (
+    C,
+    EfficientNetClassifier,
+    TemporalModel,
+    TemporalDataset,
+    _scan_face_root
+)
 
 # =====================================================================
-# Configuration Alignment
+# Pipeline Global Settings Alignment
 # =====================================================================
 TARGET_DATASET_DIR = "data_face"
 C.experiment_name = "deepfake_v1"
+C.face_root = TARGET_DATASET_DIR
 
 
-# =====================================================================
+class EvaluationImageDataset(Dataset):
+    """Isolated evaluation dataset mapping strictly onto independent image matrices."""
 
-
-class NpyEvaluationDataset(Dataset):
-    """
-    Custom evaluation dataset aligned with deepfake_pipeline output structure.
-    Scans data_face/{image,video}/{real,filter,deepfake} for .npy feature matrices.
-    """
-
-    def __init__(self, root_dir, classes):
-        self.root_dir = root_dir
-        self.classes = classes
-        self.class_to_idx = {cls: i for i, cls in enumerate(classes)}
-        self.samples = []
-
-        if not os.path.exists(root_dir):
-            return
-
-        for modality in ["image", "video"]:
-            modality_dir = os.path.join(root_dir, modality)
-            if not os.path.isdir(modality_dir):
-                continue
-            for cls in self.classes:
-                cls_dir = os.path.join(modality_dir, cls)
-                if not os.path.isdir(cls_dir):
-                    continue
-                label = self.class_to_idx[cls]
-
-                for root, _, files in os.walk(cls_dir):
-                    for f in files:
-                        if f.endswith(".npy"):
-                            self.samples.append((os.path.join(root, f), label))
+    def __init__(self, image_items):
+        self.image_items = image_items
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.image_items)
 
     def __getitem__(self, idx):
-        path, label = self.samples[idx]
+        path, label = self.image_items[idx]
         x = torch.from_numpy(np.load(path)).float()
         return x, torch.tensor(label, dtype=torch.long)
 
 
-def evaluate_model(mode_type="frame"):
-    """
-    Evaluates the trained model on specified mode and generates metrics.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if mode_type != "frame":
-        print(f"Error: Mode '{mode_type}' is not supported.")
+def generate_loss_chart(mode_type):
+    """Parses TensorBoard event logs to generate clean training vs validation loss curves."""
+    log_dir = os.path.join("logs", f"{mode_type}_{C.experiment_name}")
+    if not os.path.exists(log_dir):
+        print(f"[Info] TensorBoard log directory not found for {mode_type}. Skipping loss curve.")
         return
 
-    if not os.path.exists(TARGET_DATASET_DIR):
-        print(f"Error: Dataset directory '{TARGET_DATASET_DIR}' not found.")
-        return
+    try:
+        from tensorboard.backend.event_processing import event_accumulator
+        event_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if "events.out.tfevents" in f]
+        if not event_files:
+            print(f"[Info] No event logs discovered for {mode_type}. Skipping loss curve.")
+            return
 
-    test_dataset = NpyEvaluationDataset(root_dir=TARGET_DATASET_DIR, classes=C.classes)
+        # Extract scalar history matrices from latest tracking log
+        ea = event_accumulator.EventAccumulator(event_files[-1])
+        ea.Reload()
 
-    if len(test_dataset) == 0:
-        print(f"Error: No .npy files found in '{TARGET_DATASET_DIR}'.")
-        return
+        if "train/loss" not in ea.Scalars() or "val/loss" not in ea.Scalars():
+            print(f"[Info] Loss tracking parameters incomplete for {mode_type}. Skipping loss curve.")
+            return
 
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=0)
+        train_vals = [s.value for s in ea.Scalars("train/loss")]
+        val_vals = [s.value for s in ea.Scalars("val/loss")]
 
-    # Load Model Architecture and Weights
-    from deepfake_pipeline import EfficientNetClassifier
-    model = EfficientNetClassifier(num_classes=C.num_classes, dropout=C.dropout).to(device)
+        num_epochs = len(val_vals)
+        if num_epochs > 0 and len(train_vals) > 0:
+            # Aggregate step-level training loss values into clean epoch buckets
+            chunks = np.array_split(train_vals, num_epochs)
+            epoch_train_vals = [np.mean(c) for c in chunks if len(c) > 0]
+            epochs = list(range(1, len(epoch_train_vals) + 1))
 
-    ckpt_p = os.path.join(C.checkpoint_dir, f"frame_{C.experiment_name}", "best_model.pt")
-    if not os.path.exists(ckpt_p):
-        print(f"Error: Model weights checkpoint not found at '{ckpt_p}'.")
-        return
+            plt.figure(figsize=(6, 4.5))
+            plt.plot(epochs, epoch_train_vals, label="Train Loss", color="royalblue", marker='o', linewidth=2)
+            plt.plot(range(1, num_epochs + 1), val_vals, label="Val Loss", color="darkorange", marker='s', linewidth=2)
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.title(f"Loss Convergence Curve - {mode_type.upper()}")
+            plt.legend(loc="upper right")
+            plt.grid(True, linestyle="--", alpha=0.5)
+            plt.tight_layout()
 
-    ckpt = torch.load(ckpt_p, map_location=device, weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-
-    all_labels = []
-    all_preds = []
-    all_probs = []
-
-    # Inference Loop
-    with torch.no_grad():
-        for batch in test_loader:
-            x, y = batch
-            x = x.to(device, non_blocking=True)
-
-            outputs = model(x)
-            probs = torch.softmax(outputs, dim=1).cpu().numpy()
-            preds = probs.argmax(axis=1)
-
-            all_labels.extend(y.numpy())
-            all_preds.extend(preds)
-            all_probs.extend(probs)
-
-    y_true = np.array(all_labels)
-    y_pred = np.array(all_preds)
-    y_prob = np.array(all_probs)
-
-    # Output strict evaluation matrix
-    print(classification_report(y_true, y_pred, target_names=test_dataset.classes, digits=4))
-
-    # Export high-resolution visualization charts
-    generate_charts(y_true, y_pred, y_prob, mode_type, test_dataset.classes)
+            loss_path = f"evaluation_results_{mode_type}_loss.png"
+            plt.savefig(loss_path, dpi=300)
+            plt.close()
+            print(f"Loss Curve saved to: {loss_path}")
+    except Exception as e:
+        print(f"[Warning] Could not generate loss chart for {mode_type}: {e}")
 
 
 def generate_charts(y_true, y_pred, y_prob, mode_type, class_names):
-    """Generates and saves professional evaluation charts with English labels."""
-    # 1. Confusion Matrix
+    """Generates standard clean evaluation charts for academic reporting."""
+    # 1. Confusion Matrix Plotting
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(6, 5))
+    plt.figure(figsize=(5.5, 4.5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
     plt.title(f'Confusion Matrix - {mode_type.upper()}')
     plt.ylabel('True Label')
@@ -137,9 +104,9 @@ def generate_charts(y_true, y_pred, y_prob, mode_type, class_names):
     plt.savefig(cm_path, dpi=300)
     plt.close()
 
-    # 2. ROC & AUC Curve
+    # 2. ROC & AUC Vector Generation
     y_true_bin = label_binarize(y_true, classes=list(range(len(class_names))))
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(6, 5))
     for i in range(len(class_names)):
         fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_prob[:, i])
         roc_auc = auc(fpr, tpr)
@@ -157,10 +124,80 @@ def generate_charts(y_true, y_pred, y_prob, mode_type, class_names):
     plt.savefig(roc_path, dpi=300)
     plt.close()
 
-    # Minimalist output paths info
     print(f"Confusion Matrix saved to: {cm_path}")
     print(f"ROC Curve saved to: {roc_path}")
 
 
+def evaluate_model(mode_type="frame"):
+    """Runs evaluation pass using isolated test arrays for the selected architecture."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    image_items, video_dirs = _scan_face_root()
+
+    # -----------------------------------------------------------------
+    # Configuration Setup: Frame Mode (Images Only)
+    # -----------------------------------------------------------------
+    if mode_type == "frame":
+        if len(image_items) == 0:
+            print(f"[Error] No evaluation images found in '{TARGET_DATASET_DIR}/image'.")
+            return
+        test_dataset = EvaluationImageDataset(image_items)
+        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=0)
+        model = EfficientNetClassifier(num_classes=C.num_classes, dropout=C.dropout).to(device)
+        ckpt_p = os.path.join(C.checkpoint_dir, f"frame_{C.experiment_name}", "best_model.pt")
+
+    # -----------------------------------------------------------------
+    # Configuration Setup: Temporal Mode (Video Sequences Only)
+    # -----------------------------------------------------------------
+    elif mode_type == "temporal":
+        if len(video_dirs) == 0:
+            print(f"[Error] No evaluation video structures found in '{TARGET_DATASET_DIR}/video'.")
+            return
+        test_dataset = TemporalDataset(video_dirs, seq_len=C.temporal_seq_len, stride=C.temporal_stride)
+        test_loader = DataLoader(test_dataset, batch_size=C.temporal_batch_size, shuffle=False, num_workers=0)
+        model = TemporalModel(num_classes=C.num_classes, hidden_size=C.hidden_size,
+                              num_layers=C.num_lstm_layers, dropout=C.lstm_dropout,
+                              bidirectional=C.bidirectional).to(device)
+        ckpt_p = os.path.join(C.checkpoint_dir, f"temporal_{C.experiment_name}", "best_model.pt")
+    else:
+        return
+
+    # Checkpoint Integrity Check
+    if not os.path.exists(ckpt_p):
+        print(f"[Error] Missing checkpoint weights: {ckpt_p}")
+        return
+
+    ckpt = torch.load(ckpt_p, map_location=device, weights_only=False)
+    model.load_state_dict(ckpt["model_state_dict"])
+    model.eval()
+
+    all_labels, all_preds, all_probs = [], [], []
+
+    # Concise Inference Execution Loop
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc=f"Evaluating [{mode_type.upper()}]", leave=False):
+            x, y = batch
+            x = x.to(device, non_blocking=True)
+
+            outputs = model(x)
+            probs = torch.softmax(outputs, dim=1).cpu().numpy()
+            preds = probs.argmax(axis=1)
+
+            all_labels.extend(y.numpy())
+            all_preds.extend(preds)
+            all_probs.extend(probs)
+
+    y_true = np.array(all_labels)
+    y_pred = np.array(all_preds)
+    y_prob = np.array(all_probs)
+
+    # Output Standard Metrics and Generate Graphics
+    print(f"\n--- {mode_type.upper()} EVALUATION REPORT ---")
+    print(classification_report(y_true, y_pred, target_names=C.classes, digits=4))
+    generate_charts(y_true, y_pred, y_prob, mode_type, C.classes)
+    generate_loss_chart(mode_type)
+
+
 if __name__ == "__main__":
+    # Execute batch test evaluation routines across both isolated sets sequentially
     evaluate_model(mode_type="frame")
+    evaluate_model(mode_type="temporal")
